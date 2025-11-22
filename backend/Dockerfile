@@ -36,6 +36,8 @@ COPY --chown=appuser:appuser alembic ./alembic
 # Expose the port the app runs on.
 EXPOSE 8000
 
-# On container start, run database migrations and then launch the application.
-# This ensures the database is up-to-date before the app starts serving requests.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# On container start, run database migrations and then launch the application with Gunicorn.
+# Gunicorn acts as a process manager, and we use Uvicorn workers for ASGI.
+# The web process binds to $PORT, which is standard for most PaaS providers.
+# We use a single worker to keep memory usage low on free tiers.
+CMD ["sh", "-c", "alembic upgrade head && gunicorn -w 1 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:$PORT"]
