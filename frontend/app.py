@@ -1,36 +1,28 @@
 import streamlit as st
-import os
 import requests
-from dotenv import load_dotenv
-import traceback
 import logging
 from typing import List, Dict, Any
 import json
 import time
 from pathlib import Path
 
-# Load environment variables at the very top
-load_dotenv()
-
-#  allow duplicate OpenMP libraries
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # --- Configuration ---
-# Use environment variables for the backend URL, with a local fallback.
-FASTAPI_BASE_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
-API_ENDPOINT = f"{FASTAPI_BASE_URL}/api/speech/upload"
-RESUME_ENDPOINT = f"{FASTAPI_BASE_URL}/api/resume/upload"
-CHAT_HISTORY_FETCH_ENDPOINT = f"{FASTAPI_BASE_URL}/api/chat/history"
-LOGIN_ENDPOINT = f"{FASTAPI_BASE_URL}/api/auth/login"
-SIGNUP_ENDPOINT = f"{FASTAPI_BASE_URL}/api/auth/signup"
-# New bot endpoints
-SPEECH_BOT_ENDPOINT = f"{FASTAPI_BASE_URL}/api/bot/chat/speech"
-INTERVIEW_QNA_BOT_ENDPOINT = f"{FASTAPI_BASE_URL}/api/bot/chat/interview-qna"
-MOCK_INTERVIEW_BOT_ENDPOINT = f"{FASTAPI_BASE_URL}/api/bot/chat/mock-interview"
+# The BASE_URL is fetched from Streamlit's secrets when deployed.
+# This is the only place the backend URL is defined.
+BASE_URL = st.secrets["BACKEND_URL"]
+
+API_ENDPOINT = f"{BASE_URL}/api/speech/upload"
+RESUME_ENDPOINT = f"{BASE_URL}/api/resume/upload"
+CHAT_HISTORY_FETCH_ENDPOINT = f"{BASE_URL}/api/chat/history"
+LOGIN_ENDPOINT = f"{BASE_URL}/api/auth/login"
+SIGNUP_ENDPOINT = f"{BASE_URL}/api/auth/signup"
+SPEECH_BOT_ENDPOINT = f"{BASE_URL}/api/bot/chat/speech"
+INTERVIEW_QNA_BOT_ENDPOINT = f"{BASE_URL}/api/bot/chat/interview-qna"
+MOCK_INTERVIEW_BOT_ENDPOINT = f"{BASE_URL}/api/bot/chat/mock-interview"
 
 ALLOWED_FILE_TYPES = ["wav", "mp3", "m4a"]
 
@@ -387,55 +379,24 @@ def show_authenticated_content():
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-        # Step 5: Handle audio input
-        audio_value = st.audio_input("🎤 Record a voice message (max 30 seconds)", key="audio_input_2")
+        # Step 5: Handle audio input (re-enabled for core functionality)
+        audio_value = st.file_uploader("Upload your audio response", type=["wav", "mp3", "m4a"], key="audio_input_2")
         if audio_value:
-            st.audio(audio_value)
-            import time
-            from pathlib import Path
-
-            timestamp = int(time.time())
-            audio_path = Path(f"audio_{timestamp}.wav")
-
-            try:
-                audio_bytes = audio_value.read()
-                if len(audio_bytes) == 0:
-                    st.warning("Empty audio recording — please try again.")
-                    st.stop()
-
-                audio_path.write_bytes(audio_bytes)
-
-                # Transcribe
-                with st.spinner("🧠 Transcribing audio..."):
-                    result = transcribe_audio(str(audio_path))
-                    user_input = result.get("text", "").strip()
-
-                if not user_input or len(user_input) < 2:
-                    st.warning("Could not transcribe audio — please try again.")
-                    st.stop()
-
-                # Show user's transcribed message
-                st.session_state.interviewer_messages.append({"role": "User", "content": user_input})
+            transcript = process_audio(audio_value)
+            if transcript:
+                st.session_state.interviewer_messages.append({"role": "User", "content": transcript})
                 with st.chat_message("User"):
-                    st.markdown(user_input)
+                    st.markdown(transcript)
 
                 # Get interviewer response
                 with st.chat_message("Bot"):
                     with st.spinner("Thinking..."):
-                        payload = {"prompt": user_input, "entire_data": entire_data, "user_id": st.session_state.user_id}
+                        payload = {"prompt": transcript, "entire_data": entire_data, "user_id": st.session_state.user_id}
                         response = get_bot_response(MOCK_INTERVIEW_BOT_ENDPOINT, payload)
                     st.markdown(response)
-
                 st.session_state.interviewer_messages.append({"role": "Bot", "content": response})
-
-            except Exception as e:
-                st.error(f"Error processing audio: {e}")
-            finally:
-                if audio_path.exists():
-                    try:
-                        audio_path.unlink()
-                    except Exception:
-                        pass
+            else:
+                st.warning("Could not transcribe audio. Please try again.")
 
         # Step 6: Handle text input
         if prompt := st.chat_input("Type your reply here...", key="mock_interview_input"):

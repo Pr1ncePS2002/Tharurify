@@ -9,7 +9,6 @@ openai-whisper==20231117
 prometheus-client==0.20.0
 gunicorn==22.0.0
 requests==2.32.3  # For downloading the index
-zipfile  # This is a standard library, but good to note
 
 # LLM & RAG
 google-generativeai==0.5.4
