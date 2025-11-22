@@ -8,6 +8,7 @@ import pdfplumber
 from typing import Dict, List, Union, Optional
 import logging
 from pathlib import Path
+from app.core.cache import resume_cache
 import unicodedata # Added import for clean_text_for_embedding
 
 #unstructured lib import
@@ -216,6 +217,11 @@ def parse_resume(content: bytes, filename: str) -> Dict[str, Union[dict, str]]:
         if not filename:
             return {"error": "No filename provided"}
 
+        cache_key = f"parse_basic:{hash(content)}:{filename}"
+        cached = resume_cache.get(cache_key)
+        if cached:
+            return cached
+
         text = extract_text_from_resume(content, filename)
 
         if not text or not text.strip():
@@ -226,6 +232,7 @@ def parse_resume(content: bytes, filename: str) -> Dict[str, Union[dict, str]]:
 
         result = extract_skills_and_roles(text)
         result["success"] = True
+        resume_cache.set(cache_key, result)
         return result
 
     except Exception as e:
@@ -237,6 +244,11 @@ def parse_entire_resume(content: bytes, filename: str) -> Dict[str, Union[str, d
     try:
         if not content:
             return {"error": "Empty file content", "success": False}
+
+        cache_key = f"parse_full:{hash(content)}:{filename}"
+        cached = resume_cache.get(cache_key)
+        if cached:
+            return cached
 
         text = extract_text_from_resume(content, filename)
 
@@ -252,15 +264,17 @@ def parse_entire_resume(content: bytes, filename: str) -> Dict[str, Union[str, d
         email = re.search(r'[\w\.-]+@[\w\.-]+', clean_full_text)
         phone = re.search(r'(\+\d{1,3})?[\s-]?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{4}', clean_full_text)
 
-        return {
+        result = {
             "success": True,
-            "full_text": clean_full_text[:5000] + "..." if len(clean_full_text) > 5000 else clean_full_text,  # Limit size
+            "full_text": clean_full_text[:5000] + "..." if len(clean_full_text) > 5000 else clean_full_text,
             "metadata": {
                 "email": email.group(0) if email else None,
                 "phone": phone.group(0) if phone else None,
             },
             "extracted_data": extracted_data
         }
+        resume_cache.set(cache_key, result)
+        return result
 
     except Exception as e:
         logger.error(f"Full resume parsing failed: {str(e)}")

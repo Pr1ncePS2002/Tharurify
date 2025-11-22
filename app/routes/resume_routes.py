@@ -1,4 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -9,17 +10,24 @@ from app.services.resume_parser import parse_resume, parse_entire_resume
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+MAX_RESUME_BYTES = 5 * 1024 * 1024  # 5MB limit
+
 @router.post("/upload")
 async def upload_resume(file: UploadFile = File(...)):
     try:
         logger.info(f"Processing resume: {file.filename}")
         content = await file.read()
+        if len(content) > MAX_RESUME_BYTES:
+            raise HTTPException(status_code=413, detail="Resume file exceeds 5MB limit")
         
         if not content:
             raise HTTPException(status_code=400, detail="Empty file")
             
-        parsed_data = parse_resume(content, file.filename)
-        entire_data = parse_entire_resume(content, file.filename)
+        # Offload parsing if large
+        parsed_data, entire_data = await asyncio.to_thread(lambda: (
+            parse_resume(content, file.filename),
+            parse_entire_resume(content, file.filename)
+        ))
         
         if "error" in parsed_data:
             raise HTTPException(status_code=422, detail=parsed_data["error"])

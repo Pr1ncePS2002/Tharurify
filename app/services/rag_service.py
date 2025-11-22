@@ -2,8 +2,8 @@
 
 import os
 from typing import List, Dict
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain_community.vectorstores import FAISS
+from langchain_google_genai import ChatGoogleGenerativeAI
+from app.vector.store import build_store
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.chains import RetrievalQA
 from langchain.docstore.document import Document
@@ -115,19 +115,21 @@ def semantic_chunk(documents: List[Document], chunk_size: int = 3) -> List[Docum
     return chunks
 
 
-def build_vector_store(documents: List[Document], desc: str = "documents") -> FAISS:
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=GOOGLE_API_KEY)
+def build_vector_store(documents: List[Document], desc: str = "documents"):
     logger.info(f"Chunking documents for {desc}")
-    chunks = semantic_chunk(documents, chunk_size=3)  # 🔹 Using custom chunking
+    chunks = semantic_chunk(documents, chunk_size=3)
     logger.info(f"Creating vector store for {desc} with {len(chunks)} chunks.")
-    return FAISS.from_documents(chunks, embedding=embeddings)
+    return build_store(chunks, collection_name=f"{desc}_collection")
 
-def build_vector_store_resume(documents: List[Document], desc: str = "documents") -> FAISS:
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=GOOGLE_API_KEY)
+def build_vector_store_resume(documents: List[Document], desc: str = "documents"):
     logger.info(f"Chunking documents for {desc}")
-    chunks = custom_resume_splitter(documents)  # 🔹 Using custom chunking
-    logger.info(f"Creating vector store for {desc} with {len(chunks)} chunks.")
-    return FAISS.from_documents(chunks, embedding=embeddings)
+    # NOTE: custom_resume_splitter returns dict of sections; convert to Document objects
+    # If documents is list of Document (pages), merge their content first.
+    merged_text = "\n".join(doc.page_content for doc in documents)
+    sections = custom_resume_splitter(merged_text)
+    section_docs = [Document(page_content=v, metadata={"section": k}) for k, v in sections.items()]
+    logger.info(f"Creating vector store for {desc} with {len(section_docs)} chunks.")
+    return build_store(section_docs, collection_name=f"{desc}_resume")
 
 def generate_interview_with_resume(uploaded_resume_bytes: bytes, filename: str, query: str) -> str:
     try:

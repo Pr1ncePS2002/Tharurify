@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.database import crud
 from app.auth import auth_utils
-from app.database.models import User, ChatHistory # Import models for type hinting
+from app.database.models import User, ChatHistory
+from app.schemas import ChatCreate  # Use shared schema
 
 
 router = APIRouter()
@@ -20,10 +21,7 @@ def get_db():
         db.close()
 
 # Pydantic model for saving chat data
-class ChatCreate(BaseModel):
-    user_id: int
-    question: str
-    answer: str
+# Removed duplicate ChatCreate definition; using central Pydantic model.
 
 @router.get("/history/{user_id}", response_model=list[dict])
 def get_user_chat_history(

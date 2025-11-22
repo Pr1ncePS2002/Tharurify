@@ -21,18 +21,34 @@ def get_db():
     finally:
         db.close()
 
-# <<< IMPORTANT: CHANGE THIS TO A STRONG, RANDOM KEY IN PRODUCTION!
-SECRET_KEY = "our-secret-key"
-ALGORITHM = "HS256" 
+from app.core.settings import settings
 
-ACCESS_TOKEN_EXPIRE_MINUTES = 30 # Short-lived access token
-REFRESH_TOKEN_EXPIRE_DAYS = 7    # Longer-lived refresh token
+# Secrets and algorithms sourced from settings; ensure .env provides a strong key.
+SECRET_KEY = settings.google_api_key or "dev-insecure-key"  # placeholder fallback; replace with dedicated secret
+ALGORITHM = "HS256"
+
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_exp_minutes
+REFRESH_TOKEN_EXPIRE_DAYS = settings.refresh_token_exp_days
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login") 
 
+def _password_meets_policy(password: str) -> bool:
+    """Basic password complexity policy: length>=10, upper, lower, digit, symbol."""
+    if len(password) < 10:
+        return False
+    classes = {
+        "upper": any(c.isupper() for c in password),
+        "lower": any(c.islower() for c in password),
+        "digit": any(c.isdigit() for c in password),
+        "symbol": any(c in "!@#$%^&*()-_=+[]{};:,<.>/?" for c in password),
+    }
+    return all(classes.values())
+
 def hash_password(password: str):
+    if not _password_meets_policy(password):
+        raise ValueError("Password does not meet complexity requirements.")
     return pwd_context.hash(password)
 
 def verify_password(plain_password: str, hashed: str):
