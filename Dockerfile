@@ -19,28 +19,7 @@ WORKDIR /home/appuser/app
 COPY --chown=appuser:appuser requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download the Whisper model to avoid runtime downloads.
-# The model size should match the WHISPER_MODEL_SIZE in your .env file.
-# Defaulting to 'small'. Change this if you use a different size.
-ARG WHISPER_MODEL_SIZE=small
-RUN python -c "import whisper; whisper.load_model('$WHISPER_MODEL_SIZE', download_root='/home/appuser/.cache/whisper')"
 
-
-# Stage 2: Final production image
-FROM python:3.11-slim as final
-
-# Install ffmpeg, which is a runtime dependency for whisper.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create a non-root user.
-RUN useradd --create-home appuser
-
-# Copy the virtual environment from the builder stage.
-COPY --from=builder --chown=appuser:appuser /home/appuser/venv /home/appuser/venv
-# Copy the pre-downloaded whisper model
-COPY --from=builder --chown=appuser:appuser /home/appuser/.cache/whisper /home/appuser/.cache/whisper
 
 # Set the PATH to use the virtual environment's python.
 ENV PATH="/home/appuser/venv/bin:$PATH"
