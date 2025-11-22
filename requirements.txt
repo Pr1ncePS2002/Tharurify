@@ -1,36 +1,41 @@
-fastapi
-uvicorn
-psycopg2-binary      # PostgreSQL adapter
-sqlalchemy           # ORM for database models
-pydantic
-python-dotenv        # for managing environment variables
-openai-whisper       # Speech-to-text (Whisper)
+fastapi==0.115.2
+uvicorn[standard]==0.31.1
+psycopg2-binary==2.9.9  # PostgreSQL adapter (future use)
+SQLAlchemy==2.0.34
+pydantic==2.9.2
+pydantic-settings==2.3.0
+python-dotenv==1.0.1
+openai-whisper==20231117
+prometheus-client==0.20.0
 
-#for llm
-streamlit
-google-generativeai
-pypdf
-langchain
-faiss-cpu
-langchain_google_genai
-langchain-community
-langchain-ollama
+# LLM & RAG
+streamlit==1.39.0
+google-generativeai==0.5.4
+langchain==0.2.16
+faiss-cpu==1.8.0
+langchain-google-genai==1.0.6
+langchain-community==0.2.12
+langchain-ollama==0.1.3
+sentence-transformers==3.0.1
+nltk==3.9.1
+qdrant-client==1.10.1
+redis==5.0.1
 
-sentence-transformers
-nltk #NEW
+# Document parsing
+pdfplumber==0.11.2
+docx2txt==0.8
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+unstructured[all-docs]==0.15.13
 
-# for pdf parsing
-pdfplumber
-docx2txt
-sqlmodel 
-passlib[bcrypt] 
-python-jose[cryptography]
+pypdfium2==4.30.0
+PyMuPDF==1.24.10
+pypdf==5.0.1
 
-#unstructured
-unstructured[all-docs]
-pdfminer.six==20221105
-pypdfium2
+# Migrations
+alembic==1.13.2
 
-# refreshtokenstuff
-alembic
-# initialize it by using ("alembic init alembic")
+# Optional dev tools (move to requirements-dev.txt later)
+ruff==0.6.9
+pytest==8.3.3
+httpx==0.27.2

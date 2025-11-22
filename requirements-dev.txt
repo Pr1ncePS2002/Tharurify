@@ -1,0 +1,11 @@
+-r requirements.txt
+# Developer-only extras
+pytest
+pytest-cov
+ruff
+mypy
+slowapi
+opentelemetry-sdk
+prometheus-client
+sentry-sdk
+locust
