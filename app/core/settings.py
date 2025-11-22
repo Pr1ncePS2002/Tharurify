@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     google_api_key: str | None = None
 
     # Whisper / model config
-    whisper_model_size: str = "small"  # can set to base/tiny for faster
+    whisper_model_size: str = "tiny"  # can set to base/tiny for faster
     # Telemetry removed (OTLP & Sentry no longer used)
 
     class Config:
