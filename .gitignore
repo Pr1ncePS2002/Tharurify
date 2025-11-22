@@ -3,4 +3,4 @@ __pycache__/
 *.pyc
 app/database/__pycache__
 app/auth/__pycache__/
-env
+backend/app/env
