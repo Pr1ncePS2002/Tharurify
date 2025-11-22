@@ -1,21 +1,16 @@
-import sys
-from pathlib import Path
-# Add project root to Python path
-sys.path.append(str(Path(__file__).parent.parent))
-
 import streamlit as st
 import os
 import requests
 from dotenv import load_dotenv
 import traceback
 import logging
-from typing import List, Dict, Any # Import Dict and Any for broader type hinting
-import json # Import the json module
-from services.whisper_service import transcribe_audio
-from utils.bot_utils import chat_with_speech_bot, chat_with_interview_bot, chat_with_interviewer
+from typing import List, Dict, Any
+import json
 import time
-from services.resume_parser import parse_resume, parse_entire_resume
+from pathlib import Path
 
+# Load environment variables at the very top
+load_dotenv()
 
 #  allow duplicate OpenMP libraries
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -25,14 +20,17 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # --- Configuration ---
-# For local testing, it's usually http://127.0.0.1:8000
-FASTAPI_BASE_URL = "http://127.0.0.1:8000"
+# Use environment variables for the backend URL, with a local fallback.
+FASTAPI_BASE_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 API_ENDPOINT = f"{FASTAPI_BASE_URL}/api/speech/upload"
 RESUME_ENDPOINT = f"{FASTAPI_BASE_URL}/api/resume/upload"
-CHAT_HISTORY_FETCH_ENDPOINT = f"{FASTAPI_BASE_URL}/api/chat/history" # Will append user_id
-CHAT_SAVE_ENDPOINT = f"{FASTAPI_BASE_URL}/api/chat/save"
+CHAT_HISTORY_FETCH_ENDPOINT = f"{FASTAPI_BASE_URL}/api/chat/history"
 LOGIN_ENDPOINT = f"{FASTAPI_BASE_URL}/api/auth/login"
 SIGNUP_ENDPOINT = f"{FASTAPI_BASE_URL}/api/auth/signup"
+# New bot endpoints
+SPEECH_BOT_ENDPOINT = f"{FASTAPI_BASE_URL}/api/bot/chat/speech"
+INTERVIEW_QNA_BOT_ENDPOINT = f"{FASTAPI_BASE_URL}/api/bot/chat/interview-qna"
+MOCK_INTERVIEW_BOT_ENDPOINT = f"{FASTAPI_BASE_URL}/api/bot/chat/mock-interview"
 
 ALLOWED_FILE_TYPES = ["wav", "mp3", "m4a"]
 
@@ -144,22 +142,19 @@ def fetch_user_chat_history(user_id: int, access_token: str) -> List[Dict[str, A
             st.rerun() # Rerun to display login page
         return None
 
-def logout():
-    """Resets session state to log out the user."""
-    st.session_state.logged_in = False
-    st.session_state.username = None
-    st.session_state.user_id = None
-    st.session_state.access_token = None
-    st.session_state.user_chat_history = []
-    # Reset chat chains/messages if desired, to start fresh
-    st.session_state.speech_messages = [{"role": "Bot", "content": "Hi! I'm your Speech Assistant. How can I help you today?"}]
-    st.session_state.interview_qna_messages = []
-    st.session_state.interviewer_messages = []
-    st.session_state.speech_chain = None
-    st.session_state.interview_qna_chain = None
-    st.session_state.interviewer_chain = None
-    st.success("You have been logged out.")
-    st.rerun() # Rerun the app to show login/signup
+def get_bot_response(endpoint: str, payload: Dict[str, Any]) -> str:
+    """Generic function to get a response from a bot endpoint."""
+    try:
+        headers = {"Authorization": f"Bearer {st.session_state.access_token}"}
+        response = requests.post(endpoint, json=payload, headers=headers)
+        response.raise_for_status()
+        return response.json().get("response", "Sorry, I encountered an error.")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error calling bot endpoint {endpoint}: {e}")
+        return f"Error communicating with the backend: {e}"
+    except Exception as e:
+        logger.error(f"An unexpected error occurred in get_bot_response: {e}")
+        return "An unexpected error occurred."
 
 # --- Audio Processing ---
 def process_audio(uploaded_file: Any) -> str | None:
@@ -264,27 +259,21 @@ def show_authenticated_content():
         st.header("📄 Upload Resume")
         resume_file = st.file_uploader("Upload Resume here", type=["pdf", "docx"])
 
-        if resume_file and "resume_parsed" not in st.session_state:
-            file_content = resume_file.read()
-
-            # Run both parsers and store in session_state
-            parsed = parse_resume(file_content, resume_file.name)
-            entire = parse_entire_resume(file_content, resume_file.name)
-
-            if parsed.get("success") and entire.get("success"):
-                # Cache both
-                st.session_state.resume_parsed = parsed
-                st.session_state.resume_entire = entire
-
+        if resume_file:
+            # When a new file is uploaded, process it via the backend endpoint
+            parsed_data = process_resume(resume_file)
+            if parsed_data:
                 # Store specific fields for easy access
-                st.session_state.skills = parsed.get("skills", [])
-                roles = parsed.get("roles", [])
-                st.session_state.role = roles[0] if roles else ""
-                st.session_state.entiredata = entire
-
-                st.success("✅ Resume parsed!")
+                st.session_state.skills = parsed_data.get("skills", [])
+                st.session_state.role = parsed_data.get("role", "")
+                st.session_state.entiredata = parsed_data.get("entire_data", {})
+                st.success("✅ Resume parsed and analyzed!")
             else:
                 st.error("❌ Resume parsing failed.")
+                # Clear out old data if parsing fails
+                st.session_state.skills = []
+                st.session_state.role = ""
+                st.session_state.entiredata = {}
 
         # Optional: Display resume data if available
         # if "resume_parsed" in st.session_state:
@@ -310,7 +299,8 @@ def show_authenticated_content():
             if transcript:
                 st.session_state.speech_messages.append({"role": "User", "content": transcript})
                 with st.spinner("🤖 Analyzing..."):
-                    response = chat_with_speech_bot(transcript) # This now includes saving
+                    payload = {"prompt": transcript, "user_id": st.session_state.user_id}
+                    response = get_bot_response(SPEECH_BOT_ENDPOINT, payload)
                 st.session_state.speech_messages.append({"role": "Bot", "content": response})
             else:
                 st.warning("⚠️ Could not extract text from the audio. Please try a clearer recording.")
@@ -325,7 +315,8 @@ def show_authenticated_content():
                 st.markdown(prompt)
             with st.chat_message("Bot"):
                 with st.spinner("Thinking..."):
-                    response = chat_with_speech_bot(prompt) # This now includes saving
+                    payload = {"prompt": prompt, "user_id": st.session_state.user_id}
+                    response = get_bot_response(SPEECH_BOT_ENDPOINT, payload)
                 st.session_state.speech_messages.append({"role": "Bot", "content": response})
 
     # --- Tab 2: Interview Questions ---
@@ -338,7 +329,10 @@ def show_authenticated_content():
 
         if not st.session_state.interview_qna_messages:
             with st.spinner("🤖 Generating initial question..."):
-                response = chat_with_interview_bot("", role, skills) # This now includes saving
+                payload = {
+                    "prompt": "", "role": role, "skills": skills, "user_id": st.session_state.user_id
+                }
+                response = get_bot_response(INTERVIEW_QNA_BOT_ENDPOINT, payload)
             st.session_state.interview_qna_messages.append({"role": "Bot", "content": response})
         elif not has_specific_context and len(st.session_state.interview_qna_messages) == 1:
             pass # Prevents re-warning for general questions
@@ -350,60 +344,10 @@ def show_authenticated_content():
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
         
-        # Speech-to-text button
-        audio_value = st.audio_input("🎤 Record a voice message (max 30 seconds)", key="audio_input_1")
-
-        if audio_value:
-            st.audio(audio_value)
-
-            # Unique filename
-            timestamp = int(time.time())
-            audio_path = Path(f"audio_{timestamp}.wav")
-
-            try:
-                # Save uploaded audio
-                audio_bytes = audio_value.read()
-                if len(audio_bytes) == 0:
-                    st.warning("Empty audio recording — please try again.")
-                    st.stop()
-
-                audio_path.write_bytes(audio_bytes)
-
-                # Transcribe using Whisper
-                with st.spinner():
-                    result = transcribe_audio(str(audio_path))
-                    user_input = result.get("text", "").strip()
-
-                if not user_input or len(user_input) < 2:
-                    st.warning("Could not transcribe audio — please try again.")
-                    st.stop()
-
-                # Store chat history
-                if "interview_qna_messages" not in st.session_state:
-                    st.session_state.interview_qna_messages = []
-
-                st.session_state.interview_qna_messages.append({"role": "User", "content": user_input})
-                with st.chat_message("User"):
-                    st.markdown(user_input)
-
-                # Bot response
-                with st.chat_message("Bot"):
-                    with st.spinner("Thinking..."):
-                        response = chat_with_interview_bot(user_input, role, skills)
-                        st.markdown(response)
-
-                st.session_state.interview_qna_messages.append({"role": "Bot", "content": response})
-            except Exception as e:
-                st.error(f"Error processing audio: {e}")
-                st.stop()
-
-            finally:
-                if audio_path.exists():
-                    try:
-                        audio_path.unlink()
-                    except Exception:
-                        pass  # Safe fail
-
+        # Speech-to-text button is disabled to keep the frontend lightweight.
+        # Users should use the text input below.
+        # st.audio_input("🎤 Record a voice message (max 30 seconds)", key="audio_input_1")
+        pass
 
         if prompt := st.chat_input("Type your answer here...", key="interview_qna_input"):
             st.session_state.interview_qna_messages.append({"role": "User", "content": prompt})
@@ -411,7 +355,10 @@ def show_authenticated_content():
                 st.markdown(prompt)
             with st.chat_message("Bot"):
                 with st.spinner("Thinking..."):
-                    response = chat_with_interview_bot(prompt, role, skills) # This now includes saving
+                    payload = {
+                        "prompt": prompt, "role": role, "skills": skills, "user_id": st.session_state.user_id
+                    }
+                    response = get_bot_response(INTERVIEW_QNA_BOT_ENDPOINT, payload)
                 st.session_state.interview_qna_messages.append({"role": "Bot", "content": response})
 
     # --- Tab 3: Mock Interview ---
@@ -431,7 +378,8 @@ def show_authenticated_content():
         # Step 3: Generate initial interviewer question
         if not st.session_state.interviewer_messages:
             with st.spinner("🤖 Generating initial question..."):
-                response = chat_with_interviewer("", entire_data)
+                payload = {"prompt": "", "entire_data": entire_data, "user_id": st.session_state.user_id}
+                response = get_bot_response(MOCK_INTERVIEW_BOT_ENDPOINT, payload)
             st.session_state.interviewer_messages.append({"role": "Bot", "content": response})
 
         # Step 4: Render chat history
@@ -474,7 +422,8 @@ def show_authenticated_content():
                 # Get interviewer response
                 with st.chat_message("Bot"):
                     with st.spinner("Thinking..."):
-                        response = chat_with_interviewer(user_input, entire_data)
+                        payload = {"prompt": user_input, "entire_data": entire_data, "user_id": st.session_state.user_id}
+                        response = get_bot_response(MOCK_INTERVIEW_BOT_ENDPOINT, payload)
                     st.markdown(response)
 
                 st.session_state.interviewer_messages.append({"role": "Bot", "content": response})
@@ -495,7 +444,8 @@ def show_authenticated_content():
                 st.markdown(prompt)
             with st.chat_message("Bot"):
                 with st.spinner("Thinking..."):
-                    response = chat_with_interviewer(prompt, entire_data)
+                    payload = {"prompt": prompt, "entire_data": entire_data, "user_id": st.session_state.user_id}
+                    response = get_bot_response(MOCK_INTERVIEW_BOT_ENDPOINT, payload)
                 st.markdown(response)
             st.session_state.interviewer_messages.append({"role": "Bot", "content": response})
 

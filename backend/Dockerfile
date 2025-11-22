@@ -1,5 +1,5 @@
 # Stage 1: Build stage for installing dependencies
-FROM python:3.11-slim as builder
+FROM python:3.10-slim as builder
 
 # Install system dependencies required for whisper (ffmpeg) and other libraries.
 # Using --no-install-recommends keeps the image lean.

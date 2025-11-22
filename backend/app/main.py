@@ -4,7 +4,7 @@ Centralized settings + structured logging + background maintenance tasks.
 """
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import speech_routes, resume_routes, chat_routes
+from app.routes import speech_routes, resume_routes, chat_routes, bot_routes
 from app.auth import auth_routes
 from app.database.db import Base, engine, SessionLocal
 import logging
@@ -80,7 +80,8 @@ app.add_middleware(
 app.include_router(auth_routes.router, prefix="/api/auth", tags=["auth"])
 app.include_router(speech_routes.router, prefix="/api/speech", tags=["speech"])
 app.include_router(resume_routes.router, prefix="/api/resume", tags=["resume"])
-app.include_router(chat_routes.router, prefix="/api/chat", tags=["chat"])  # Include the new chat routes
+app.include_router(chat_routes.router, prefix="/api/chat", tags=["chat"])
+app.include_router(bot_routes.router, prefix="/api/bot", tags=["bot"])
 
 @app.get("/")
 async def root():
