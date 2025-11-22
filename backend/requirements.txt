@@ -8,6 +8,7 @@ python-dotenv==1.0.1
 openai-whisper==20231117
 prometheus-client==0.20.0
 gunicorn==22.0.0
+python-multipart==0.0.9
 requests==2.32.3  # For downloading the index
 
 # LLM & RAG
