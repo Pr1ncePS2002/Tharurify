@@ -1,6 +1,33 @@
-myenv1
+# Environments
+myenv1/
+.env
+*.env
+backend/.env
+backend/app/.env
+docker.env
+
+# Python
 __pycache__/
 *.pyc
-app/database/__pycache__
-app/auth/__pycache__/
-backend/app/env
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+
+# Database
+app.db
+*.sqlite3
+
+# FAISS index
+backend/app/faiss_index/
+
+# Data files
+backend/app/data/
+
+# Music test files
+music test/
+
+# IDE / Editor
+.vscode/
+.idea/
